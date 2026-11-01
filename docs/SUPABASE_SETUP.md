@@ -42,14 +42,21 @@ An avatar object path must start with the authenticated user's UUID, for example
 
 ## 3. Configure Auth URLs
 
-In **Authentication → URL Configuration**, set the local Site URL to `http://localhost:3000` and add these Redirect URLs:
+In **Authentication → URL Configuration**, set the Site URL to your production canonical URL, for example `https://www.bifimoto.com`. Add these Redirect URLs:
 
-- `http://localhost:3000/auth/callback`
-- Your production app's exact callback URL, such as `https://app.example.com/auth/callback`
+- `http://localhost:3000/auth/callback` for local development
+- `https://www.bifimoto.com/auth/callback` for production
+- `https://bifimoto.com/auth/callback` too if the root domain is not redirected to `www` before the callback
 
-Supabase sends email confirmation links to this callback too. The callback exchanges the one-time PKCE code and stores the session in secure cookies.
+The app passes the current site's `/auth/callback` URL to Supabase during signup and OAuth, and the callback exchanges the one-time PKCE code and stores the session in secure cookies. Email confirmation returns verified users to `/dashboard`. After changing these settings, submit a fresh signup to receive a link with the updated redirect; existing emails keep the redirect they were created with.
 
-## 4. Configure Google and X
+## 4. Brand authentication emails
+
+In **Authentication → Email Templates**, edit the confirmation template's subject and body to use your Bifimoto name and wording. Keep Supabase's confirmation link variable (commonly `{{ .ConfirmationURL }}`) in the confirmation action so the link still completes verification and returns through `/auth/callback`.
+
+For a branded From name and address, configure a custom SMTP provider in the project's Auth SMTP settings and use an address on a domain you control that the provider has verified. Update SPF/DKIM records as directed by that email provider. Do not put SMTP credentials in the app's `NEXT_PUBLIC_` environment variables.
+
+## 5. Configure Google and X
 
 Enable each provider in **Authentication → Sign In / Providers** and enter that provider's client ID and secret. Configure each OAuth application with the callback URL shown by Supabase for that provider (the Supabase Auth URL, usually `https://<project-ref>.supabase.co/auth/v1/callback`).
 
@@ -60,7 +67,7 @@ To grant administrator access, update the account's `public.profiles.role` throu
 
 The app's own `/auth/callback` URL must also be on Supabase's redirect allow list. The provider callback URL and the app callback URL serve different steps in the OAuth flow.
 
-## 5. Auth behavior
+## 6. Auth behavior
 
 - Email/password sign-up creates a Supabase Auth user. Supabase sends the confirmation email; the signup page links back to `/verification-success` after confirmation.
 - Profile fields and (for email/password sign-up) consent timestamps are copied from initial signup metadata by a database trigger. They are not client-writable afterward. OAuth provider sign-up currently creates the profile but does not record checkbox consent timestamps.

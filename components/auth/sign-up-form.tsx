@@ -52,7 +52,7 @@ export function SignUpForm() {
         username: formData.username,
         privacyPolicyAcceptedAt: acceptedAt,
         termsAcceptedAt: acceptedAt,
-        emailRedirectTo: new URL("/auth/callback?next=/verification-success", window.location.origin).toString(),
+        emailRedirectTo: new URL("/auth/callback?next=/dashboard", window.location.origin).toString(),
       })
 
       if (result.error) {

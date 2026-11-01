@@ -24,7 +24,7 @@ export default function VerificationPendingPage() {
             <CardContent className="space-y-4">
               <p className="text-sm text-muted-foreground text-center">
                 Please click the verification link in your email to activate your account. The link expires according
-                to the authentication settings for this Supabase project.
+                to the authentication settings for this Bifimoto project.
               </p>
               <div className="bg-muted/50 p-4 rounded-lg">
                 <p className="text-xs text-muted-foreground text-center">

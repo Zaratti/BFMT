@@ -17,8 +17,8 @@ const spaceGrotesk = Space_Grotesk({
 })
 
 export const metadata: Metadata = {
-  title: "Professional Web App",
-  description: "Modern SaaS application with user and admin dashboards",
+  title: "bifimoto.com",
+  description: "Binary Financials, Digital Commodities and Asset Exchange Application",
   generator: "v0.app",
 }
 
