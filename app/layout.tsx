@@ -17,7 +17,7 @@ const spaceGrotesk = Space_Grotesk({
 })
 
 export const metadata: Metadata = {
-  title: "bifimoto.com",
+  title: "Sign In or Sign Up | Bifimoto",
   description: "Binary Financials, Digital Commodities and Asset Exchange Application",
   generator: "v0.app",
 }
