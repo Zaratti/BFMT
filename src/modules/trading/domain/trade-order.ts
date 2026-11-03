@@ -17,6 +17,8 @@ export interface TradeOrder {
   reviewedBy: string | null
   reviewedAt: string | null
   reviewNote: string | null
+  completedBy: string | null
+  completedAt: string | null
 }
 
 export interface TradeOrderDraft {
@@ -29,14 +31,51 @@ export interface TradeOrderDraft {
   destination: string
 }
 
+export interface TradeLedgerEntry {
+  id: string
+  orderId: string
+  userId: string
+  side: TradeSide
+  assetSymbol: string
+  amountUsd: number
+  feeUsd: number
+  assetQuantity: number
+  completedBy: string
+  createdAt: string
+}
+
+export interface TradeFeeTier {
+  id: string
+  side: TradeSide
+  assetSymbol: string
+  minimumUsd: number
+  maximumUsd: number | null
+  feeUsd: number
+}
+
+export interface TradeFeeTierDraft {
+  id?: string
+  side: TradeSide
+  assetSymbol: string
+  minimumUsd: number
+  maximumUsd: number | null
+  feeUsd: number
+}
+
 export interface TradeOrderRepository {
   create(draft: TradeOrderDraft): Promise<TradeOrder>
   listMine(): Promise<TradeOrder[]>
+  listMyLedgerEntries(): Promise<TradeLedgerEntry[]>
+  getFee(side: TradeSide, assetSymbol: string, amountUsd: number): Promise<number | null>
 }
 
 export interface TradeOrderAdministrationRepository {
   listAll(): Promise<TradeOrder[]>
   review(id: string, decision: TradeOrderDecision, note: string | null): Promise<TradeOrder>
+  complete(id: string, transactionPassword: string): Promise<void>
+  listFeeTiers(): Promise<TradeFeeTier[]>
+  saveFeeTier(tier: TradeFeeTierDraft): Promise<TradeFeeTier>
+  deleteFeeTier(id: string): Promise<void>
 }
 
 export function validateTradeOrderDecision(id: string, decision: string, note: string | null): string | null {

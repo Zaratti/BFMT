@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import type { TradeOrder, TradeOrderDecision } from "@/src/modules/trading/domain/trade-order"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 
@@ -15,6 +16,7 @@ interface TradeOrderReviewProps {
 export function TradeOrderReview({ orders }: TradeOrderReviewProps) {
   const router = useRouter()
   const [reviewingId, setReviewingId] = useState<string | null>(null)
+  const [completionPassword, setCompletionPassword] = useState("")
   const [error, setError] = useState<string | null>(null)
 
   async function reviewOrder(order: TradeOrder, decision: TradeOrderDecision) {
@@ -43,12 +45,42 @@ export function TradeOrderReview({ orders }: TradeOrderReviewProps) {
     }
   }
 
+  async function completeOrder(order: TradeOrder) {
+    if (!completionPassword) {
+      setError("Enter your separate admin transaction password to complete this order.")
+      return
+    }
+
+    setReviewingId(order.id)
+    setError(null)
+    try {
+      const response = await fetch(`/api/admin/trade-orders/${encodeURIComponent(order.id)}/decision`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "complete", transactionPassword: completionPassword }),
+      })
+      const result: { error?: string } = await response.json()
+
+      if (!response.ok) {
+        setCompletionPassword("")
+        throw new Error(result.error ?? "Unable to complete this order.")
+      }
+      setCompletionPassword("")
+      router.refresh()
+    } catch (completionError) {
+      setCompletionPassword("")
+      setError(completionError instanceof Error ? completionError.message : "Unable to complete this order.")
+    } finally {
+      setReviewingId(null)
+    }
+  }
+
   return (
     <Card>
       <CardHeader>
         <CardTitle>Trade order review</CardTitle>
         <CardDescription>
-          Orders are user-submitted requests. Approval records an admin decision; it does not execute a transfer.
+          Orders are user-submitted requests. Completing records that external settlement was manually confirmed; it does not execute a transfer.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -69,7 +101,8 @@ export function TradeOrderReview({ orders }: TradeOrderReviewProps) {
                   <TableHead>Submitted</TableHead>
                   <TableHead>Reviewed by</TableHead>
                   <TableHead>Review note</TableHead>
-                  <TableHead className="text-right">Decision</TableHead>
+                  <TableHead>Completed by / at</TableHead>
+                  <TableHead className="text-right">Review / completion</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -92,6 +125,11 @@ export function TradeOrderReview({ orders }: TradeOrderReviewProps) {
                     <TableCell className="max-w-48 truncate" title={order.reviewNote ?? undefined}>
                       {order.reviewNote ?? "—"}
                     </TableCell>
+                    <TableCell className="font-mono text-xs">
+                      {order.completedAt
+                        ? <>{order.completedBy ?? "—"}<br />{new Date(order.completedAt).toLocaleString()}</>
+                        : "—"}
+                    </TableCell>
                     <TableCell>
                       {order.status === "pending_review" ? (
                         <div className="flex justify-end gap-2">
@@ -110,6 +148,35 @@ export function TradeOrderReview({ orders }: TradeOrderReviewProps) {
                           >
                             Reject
                           </Button>
+                        </div>
+                      ) : order.status === "approved" ? (
+                        <div className="flex min-w-48 flex-col items-end gap-2">
+                          <Input
+                            type="password"
+                            autoComplete="current-password"
+                            aria-label="Admin transaction password"
+                            placeholder="Transaction password"
+                            value={completionPassword}
+                            onChange={(event) => setCompletionPassword(event.target.value)}
+                            className="max-w-56"
+                          />
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              onClick={() => void completeOrder(order)}
+                              disabled={reviewingId !== null || !completionPassword}
+                            >
+                              {reviewingId === order.id ? "Saving..." : "Confirm completion"}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              onClick={() => void reviewOrder(order, "reject")}
+                              disabled={reviewingId !== null}
+                            >
+                              Reject
+                            </Button>
+                          </div>
                         </div>
                       ) : (
                         <span className="text-sm text-muted-foreground">

@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState, useRef } from "react"
+import { useState, useRef, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -23,18 +23,18 @@ import { validateFile, sanitizeInput, validateAccountNumber, logSecurityEvent } 
 import { getBrowserTradeOrderUseCases } from "@/src/modules/trading/composition/browser"
 
 const cryptoAssets = [
-  { symbol: "BTC", name: "Bitcoin", price: 67234, icon: "₿", category: "crypto", network: "Bitcoin" },
-  { symbol: "ETH", name: "Ethereum", price: 3456, icon: "Ξ", category: "crypto", network: "Ethereum" },
-  { symbol: "TON", name: "Toncoin", price: 5.42, icon: "💎", category: "crypto", network: "TON" },
-  { symbol: "SOL", name: "Solana", price: 178, icon: "◎", category: "crypto", network: "Solana" },
-  { symbol: "BNB", name: "Binance Coin", price: 245, icon: "BNB", category: "crypto", network: "BSC" },
-  { symbol: "SUI", name: "Sui", price: 3.21, icon: "🌊", category: "crypto", network: "Sui" },
-  { symbol: "PI", name: "Pi Network", price: 0.45, icon: "π", category: "crypto", network: "Pi Network" },
-  { symbol: "USDC", name: "USD Coin", price: 1, icon: "💵", category: "stablecoin" },
-  { symbol: "USDT", name: "Tether", price: 1, icon: "₮", category: "stablecoin" },
-  { symbol: "PAYPAL", name: "PayPal", price: 1, icon: "💳", category: "fiat" },
-  { symbol: "SKRILL", name: "Skrill", price: 1, icon: "💳", category: "fiat" },
-  { symbol: "NETELLER", name: "Neteller", price: 1, icon: "💳", category: "fiat" },
+  { symbol: "BTC", name: "Bitcoin", icon: "₿", category: "crypto", network: "Bitcoin" },
+  { symbol: "ETH", name: "Ethereum", icon: "Ξ", category: "crypto", network: "Ethereum" },
+  { symbol: "TON", name: "Toncoin", icon: "💎", category: "crypto", network: "TON" },
+  { symbol: "SOL", name: "Solana", icon: "◎", category: "crypto", network: "Solana" },
+  { symbol: "BNB", name: "Binance Coin", icon: "BNB", category: "crypto", network: "BSC" },
+  { symbol: "SUI", name: "Sui", icon: "🌊", category: "crypto", network: "Sui" },
+  { symbol: "PI", name: "Pi Network", icon: "π", category: "crypto", network: "Pi Network" },
+  { symbol: "USDC", name: "USD Coin", icon: "💵", category: "stablecoin" },
+  { symbol: "USDT", name: "Tether", icon: "₮", category: "stablecoin" },
+  { symbol: "PAYPAL", name: "PayPal", icon: "💳", category: "fiat" },
+  { symbol: "SKRILL", name: "Skrill", icon: "💳", category: "fiat" },
+  { symbol: "NETELLER", name: "Neteller", icon: "💳", category: "fiat" },
 ]
 
 const networkOptions = {
@@ -88,19 +88,90 @@ export default function SellPage() {
   const [submittedOrderId, setSubmittedOrderId] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [payoutTimerExpired, setPayoutTimerExpired] = useState(false)
+  const [marketPrices, setMarketPrices] = useState<Record<string, number>>({})
+  const [marketPriceError, setMarketPriceError] = useState("")
+  const [transactionFeeAmount, setTransactionFeeAmount] = useState<number | null>(null)
+  const [feeError, setFeeError] = useState("")
+  const [feeLoading, setFeeLoading] = useState(false)
 
   const selectedCrypto = cryptoAssets.find((asset) => asset.symbol === selectedAsset)
-  const ngnEquivalent = usdAmount ? (Number.parseFloat(usdAmount) * 1650).toLocaleString() : "0"
+  const marketPrice = selectedCrypto?.category === "fiat" ? 1 : marketPrices[selectedAsset]
+  const rawAmount = Number.parseFloat(usdAmount)
+  const parsedAmount = Number.isFinite(rawAmount) ? Math.round((rawAmount + Number.EPSILON) * 100) / 100 : NaN
+  const isAmountValid = Number.isFinite(parsedAmount) && parsedAmount >= 4
+  const ngnEquivalent = usdAmount && transactionFeeAmount !== null
+    ? (Math.max(0, parsedAmount - transactionFeeAmount) * 1650).toLocaleString()
+    : "—"
 
   const requiresNetwork = selectedCrypto?.category === "stablecoin"
 
   const handleUsdAmountChange = (value: string) => {
     setUsdAmount(value)
-    if (selectedCrypto && value) {
-      const assetQty = Number.parseFloat(value) / selectedCrypto.price
-      setAssetAmount(assetQty.toFixed(8))
-    }
   }
+
+  useEffect(() => {
+    let active = true
+    async function loadPrices() {
+      try {
+        const response = await fetch("/api/market/prices", { credentials: "omit", cache: "no-store" })
+        const result = await response.json() as { prices?: Record<string, number>; error?: string }
+        if (!response.ok || !result.prices) throw new Error(result.error ?? "Live prices unavailable.")
+        if (active) {
+          setMarketPrices(result.prices)
+          setMarketPriceError("")
+        }
+      } catch (error) {
+        if (active) {
+          setMarketPrices({})
+          setMarketPriceError(error instanceof Error ? error.message : "Live prices unavailable.")
+        }
+      }
+    }
+
+    void loadPrices()
+    const intervalId = window.setInterval(() => void loadPrices(), 60_000)
+    return () => {
+      active = false
+      window.clearInterval(intervalId)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!selectedCrypto || !Number.isFinite(parsedAmount) || parsedAmount <= 0 || !marketPrice) {
+      setAssetAmount("")
+      return
+    }
+    setAssetAmount((parsedAmount / marketPrice).toFixed(8))
+  }, [selectedCrypto, parsedAmount, marketPrice])
+
+  useEffect(() => {
+    let active = true
+    if (!selectedCrypto || !Number.isFinite(parsedAmount) || parsedAmount <= 0) {
+      setTransactionFeeAmount(null)
+      setFeeError("")
+      setFeeLoading(false)
+      return
+    }
+
+    setTransactionFeeAmount(null)
+    setFeeError("")
+    setFeeLoading(true)
+    getBrowserTradeOrderUseCases().getFee("sell", selectedCrypto.symbol, parsedAmount)
+      .then((fee) => {
+        if (!active) return
+        if (fee === null) setFeeError("No admin fee tier matches this asset and order amount.")
+        else setTransactionFeeAmount(fee)
+      })
+      .catch((error: unknown) => {
+        if (active) setFeeError(error instanceof Error ? error.message : "The transaction fee could not be loaded.")
+      })
+      .finally(() => {
+        if (active) setFeeLoading(false)
+      })
+    return () => {
+      active = false
+    }
+  }, [selectedCrypto, parsedAmount])
 
   const handleFileUpload = async (file: File) => {
     setIsUploading(true)
@@ -213,16 +284,16 @@ export default function SellPage() {
     setIsSubmitting(true)
     setSubmissionError("")
     try {
-      if (!selectedCrypto || !uploadedFile) {
-        throw new Error("Select an asset and upload transaction proof before submitting.")
+      if (!selectedCrypto || !uploadedFile || transactionFeeAmount === null || !assetAmount) {
+        throw new Error("Select an asset, load its fee and price, and upload transaction proof before submitting.")
       }
       const order = await getBrowserTradeOrderUseCases().submitOrder({
         side: "sell",
         assetSymbol: selectedCrypto.symbol,
         network: selectedNetwork || null,
-        amountUsd: Number.parseFloat(usdAmount),
+        amountUsd: parsedAmount,
         assetQuantity: Number.parseFloat(assetAmount),
-        feeUsd: 0,
+        feeUsd: transactionFeeAmount,
         destination: `${payoutDetails.firstName} ${payoutDetails.lastName} | ${payoutDetails.bankName} | ${payoutDetails.accountNumber}`,
       })
       setSubmittedOrderId(order.id)
@@ -252,8 +323,6 @@ export default function SellPage() {
       amount: usdAmount,
     })
   }
-
-  const isAmountValid = usdAmount && Number.parseFloat(usdAmount) >= 4
 
   return (
     <div className="min-h-screen bg-background p-4 sm:p-6 lg:p-8">
@@ -313,7 +382,9 @@ export default function SellPage() {
                           <span>
                             {asset.name} ({asset.symbol})
                           </span>
-                          <span className="text-muted-foreground">${asset.price.toLocaleString()}</span>
+                          <span className="text-muted-foreground">
+                            {marketPrices[asset.symbol] ? `$${marketPrices[asset.symbol].toLocaleString()}` : "Price unavailable"}
+                          </span>
                         </div>
                       </SelectItem>
                     ))}
@@ -327,7 +398,9 @@ export default function SellPage() {
                           <span>
                             {asset.name} ({asset.symbol})
                           </span>
-                          <span className="text-muted-foreground">${asset.price.toLocaleString()}</span>
+                          <span className="text-muted-foreground">
+                            {marketPrices[asset.symbol] ? `$${marketPrices[asset.symbol].toLocaleString()}` : "Price unavailable"}
+                          </span>
                         </div>
                       </SelectItem>
                     ))}
@@ -344,6 +417,7 @@ export default function SellPage() {
                     ))}
                 </SelectContent>
               </Select>
+              {marketPriceError && <p role="alert" className="text-xs text-destructive">{marketPriceError}</p>}
             </div>
 
             {/* Network Selection for USDC/USDT */}
@@ -372,6 +446,8 @@ export default function SellPage() {
                 <Input
                   id="usd-amount"
                   type="number"
+                  step="0.01"
+                  min="4"
                   placeholder="0.00"
                   value={usdAmount}
                   onChange={(e) => handleUsdAmountChange(e.target.value)}
@@ -383,11 +459,21 @@ export default function SellPage() {
               <div className="space-y-2">
                 <Label htmlFor="asset-amount">Asset Amount</Label>
                 <Input id="asset-amount" placeholder="0.00000000" value={assetAmount} readOnly className="bg-muted" />
+                {selectedCrypto && selectedCrypto.category !== "fiat" && (
+                  <p className="text-xs text-muted-foreground">
+                    {marketPrice ? `Kraken last price: $${marketPrice.toLocaleString()}` : "Waiting for a live Kraken price."}
+                  </p>
+                )}
               </div>
             </div>
 
             {/* Value Display */}
-            <div className="p-4 bg-muted rounded-lg">
+            <div className="p-4 bg-muted rounded-lg space-y-2">
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-muted-foreground">Transaction fee:</span>
+                <span>{feeLoading ? "Loading..." : transactionFeeAmount === null ? "Unavailable" : `$${transactionFeeAmount.toFixed(2)}`}</span>
+              </div>
+              {feeError && <p role="alert" className="text-xs text-destructive">{feeError}</p>}
               <div className="flex justify-between items-center">
                 <span className="text-sm text-muted-foreground">NGN Equivalent:</span>
                 <span className="text-lg font-semibold">₦{ngnEquivalent}</span>
@@ -485,6 +571,9 @@ export default function SellPage() {
                     !usdAmount ||
                     !isAmountValid ||
                     (requiresNetwork && !selectedNetwork) ||
+                    transactionFeeAmount === null ||
+                    !assetAmount ||
+                    (selectedCrypto?.category !== "fiat" && !marketPrice) ||
                     payoutTimerExpired
                   }
                 >
@@ -624,6 +713,12 @@ export default function SellPage() {
                         <div className="flex justify-between text-xs">
                           <span>USD Value:</span>
                           <span className="font-medium">${usdAmount}</span>
+                        </div>
+                        <div className="flex justify-between text-xs">
+                          <span>Transaction fee:</span>
+                          <span className="font-medium">
+                            {transactionFeeAmount === null ? "Unavailable" : `$${transactionFeeAmount.toFixed(2)}`}
+                          </span>
                         </div>
                         <div className="flex justify-between border-t pt-1 font-semibold text-sm">
                           <span>You'll receive:</span>

@@ -1,10 +1,10 @@
 import { AdminDashboard } from "@/components/admin/admin-dashboard"
-import { RateManagementPage } from "@/components/admin/rate-management-page"
+import { FeeTierManagement } from "@/components/admin/fee-tier-management"
 
 export default function AdminRateManagementPage() {
   return (
     <AdminDashboard>
-      <RateManagementPage />
+      <FeeTierManagement />
     </AdminDashboard>
   )
 }

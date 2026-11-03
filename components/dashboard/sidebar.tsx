@@ -1,9 +1,12 @@
 "use client"
 
+import { useEffect, useState } from "react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Home, CreditCard, Settings, LogOut, X, HelpCircle } from "lucide-react"
+import { getBrowserIdentityAuthentication } from "@/src/modules/identity/composition/browser"
+import type { AuthenticatedIdentity } from "@/src/modules/identity/domain/authentication"
 
 interface SidebarProps {
   isOpen: boolean
@@ -18,6 +21,18 @@ const navigationItems = [
 ]
 
 export function Sidebar({ isOpen, onClose }: SidebarProps) {
+  const [identity, setIdentity] = useState<AuthenticatedIdentity | null>(null)
+
+  useEffect(() => {
+    getBrowserIdentityAuthentication()
+      .getCurrentIdentity()
+      .then(setIdentity)
+      .catch((error: unknown) => console.error("Could not load sidebar identity.", error))
+  }, [])
+
+  const displayName = identity?.username ?? identity?.email?.split("@")[0] ?? "Account"
+  const avatarInitials = displayName.slice(0, 2).toUpperCase()
+
   return (
     <>
       {/* Desktop Sidebar */}
@@ -55,11 +70,11 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
               <div className="flex items-center">
                 <Avatar className="h-9 w-9">
                   <AvatarImage src="/placeholder.svg?height=36&width=36" alt="User" />
-                  <AvatarFallback className="bg-sidebar-primary text-sidebar-primary-foreground">JD</AvatarFallback>
+                  <AvatarFallback className="bg-sidebar-primary text-sidebar-primary-foreground">{avatarInitials}</AvatarFallback>
                 </Avatar>
                 <div className="ml-3">
-                  <p className="text-sm font-medium text-sidebar-foreground">John Doe</p>
-                  <p className="text-xs text-sidebar-foreground/60">john@example.com</p>
+                  <p className="text-sm font-medium text-sidebar-foreground">{displayName}</p>
+                  <p className="text-xs text-sidebar-foreground/60">{identity?.email ?? ""}</p>
                 </div>
                 <Button variant="ghost" size="sm" className="ml-auto text-sidebar-foreground hover:bg-sidebar-accent">
                   <LogOut className="h-4 w-4" />
@@ -113,11 +128,11 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
             <div className="flex items-center">
               <Avatar className="h-9 w-9">
                 <AvatarImage src="/placeholder.svg?height=36&width=36" alt="User" />
-                <AvatarFallback className="bg-sidebar-primary text-sidebar-primary-foreground">JD</AvatarFallback>
+                <AvatarFallback className="bg-sidebar-primary text-sidebar-primary-foreground">{avatarInitials}</AvatarFallback>
               </Avatar>
               <div className="ml-3">
-                <p className="text-sm font-medium text-sidebar-foreground">John Doe</p>
-                <p className="text-xs text-sidebar-foreground/60">john@example.com</p>
+                <p className="text-sm font-medium text-sidebar-foreground">{displayName}</p>
+                <p className="text-xs text-sidebar-foreground/60">{identity?.email ?? ""}</p>
               </div>
               <Button variant="ghost" size="sm" className="ml-auto text-sidebar-foreground hover:bg-sidebar-accent">
                 <LogOut className="h-4 w-4" />

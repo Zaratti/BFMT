@@ -4,8 +4,6 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import {
   Menu,
-  TrendingUp,
-  TrendingDown,
   Wallet,
   Activity,
   CreditCard,
@@ -16,48 +14,64 @@ import {
 } from "lucide-react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import Link from "next/link"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { LanguageSelector } from "@/components/language-selector"
+import { getBrowserIdentityAuthentication } from "@/src/modules/identity/composition/browser"
+import { getBrowserTradeOrderUseCases } from "@/src/modules/trading/composition/browser"
+import type { TradeLedgerEntry, TradeOrder } from "@/src/modules/trading/domain/trade-order"
 
 interface MainContentProps {
   onMenuClick: () => void
 }
 
-const stats = [
-  {
-    name: "Portfolio Balance",
-    value: "$12,847.32",
-    change: "+12.5%",
-    changeType: "increase" as "increase" | "decrease" | "neutral",
-    icon: Wallet,
-  },
-  {
-    name: "Last Transaction",
-    value: "BTC Buy",
-    change: "$2,450.00",
-    changeType: "increase" as "increase" | "decrease" | "neutral",
-    icon: CreditCard,
-  },
-  {
-    name: "Pending Orders",
-    value: "3 Active",
-    change: "2 Buy, 1 Sell",
-    changeType: "neutral" as "increase" | "decrease" | "neutral",
-    icon: Activity,
-  },
-]
-
-const recentTransactions = [
-  { id: 1, description: "Bitcoin Purchase", amount: "+0.05 BTC", value: "$2,450.00", date: "2 hours ago", type: "buy" },
-  { id: 2, description: "Ethereum Sale", amount: "-2.5 ETH", value: "$4,200.00", date: "4 hours ago", type: "sell" },
-  { id: 3, description: "USDT Deposit", amount: "+1,000 USDT", value: "$1,000.00", date: "1 day ago", type: "deposit" },
-  { id: 4, description: "BNB Purchase", amount: "+15 BNB", value: "$3,750.00", date: "2 days ago", type: "buy" },
-]
-
 export function MainContent({ onMenuClick }: MainContentProps) {
   const [hasNewMessages, setHasNewMessages] = useState(true)
   const [hasUnreadMessages, setHasUnreadMessages] = useState(false)
   const [notificationClicked, setNotificationClicked] = useState(false)
+  const [username, setUsername] = useState<string | null>(null)
+  const [welcomeBack, setWelcomeBack] = useState(false)
+  const [orders, setOrders] = useState<TradeOrder[]>([])
+  const [ledgerEntries, setLedgerEntries] = useState<TradeLedgerEntry[]>([])
+  const [dashboardError, setDashboardError] = useState<string | null>(null)
+  const [isDashboardLoading, setIsDashboardLoading] = useState(true)
+
+  useEffect(() => {
+    let active = true
+    async function loadDashboard() {
+      try {
+        const [identity, visitedRecently, userOrders, userLedgerEntries] = await Promise.all([
+          getBrowserIdentityAuthentication().getCurrentIdentity(),
+          getBrowserIdentityAuthentication().recordDashboardVisit(),
+          getBrowserTradeOrderUseCases().listMyOrders(),
+          getBrowserTradeOrderUseCases().listMyLedgerEntries(),
+        ])
+        if (!active) return
+        setUsername(identity?.username ?? identity?.email?.split("@")[0] ?? null)
+        setWelcomeBack(visitedRecently)
+        setOrders(userOrders)
+        setLedgerEntries(userLedgerEntries)
+      } catch (error) {
+        console.error("Could not load dashboard data.", error)
+        if (active) setDashboardError("Dashboard information could not be loaded. Please refresh to try again.")
+      } finally {
+        if (active) setIsDashboardLoading(false)
+      }
+    }
+
+    void loadDashboard()
+    return () => {
+      active = false
+    }
+  }, [])
+
+  const completedTotal = ledgerEntries.reduce((total, entry) => total + entry.amountUsd, 0)
+  const waitingOrders = orders.filter((order) => order.status === "pending_review" || order.status === "approved").length
+  const stats = [
+    { name: "Portfolio Balance", value: `$${completedTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, description: "Total of completed buy and sell records", icon: Wallet },
+    { name: "Total Requests", value: String(orders.length), description: "All submitted trade requests", icon: CreditCard },
+    { name: "Open Requests", value: String(waitingOrders), description: "Awaiting review or completion", icon: Activity },
+  ]
+  const recentTransactions = ledgerEntries.slice(0, 4)
 
   const handleNotificationClick = () => {
     setNotificationClicked(true)
@@ -95,7 +109,9 @@ export function MainContent({ onMenuClick }: MainContentProps) {
             </Button>
             <Avatar className="h-8 w-8 cursor-pointer">
               <AvatarImage src="/placeholder.svg?height=32&width=32" alt="User Profile" />
-              <AvatarFallback className="bg-accent text-accent-foreground text-xs">JD</AvatarFallback>
+              <AvatarFallback className="bg-accent text-accent-foreground text-xs">
+                {(username?.slice(0, 2) ?? "BF").toUpperCase()}
+              </AvatarFallback>
             </Avatar>
           </div>
         </div>
@@ -107,8 +123,12 @@ export function MainContent({ onMenuClick }: MainContentProps) {
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-2xl font-bold text-foreground mb-2">Welcome back, John!</h2>
-                <p className="text-muted-foreground">Ready to trade? Your portfolio is up 12.5% this week.</p>
+                <h2 className="text-2xl font-bold text-foreground mb-2">
+                  {welcomeBack ? "Welcome back" : "Hello"}, {username ?? "there"}!
+                </h2>
+                <p className="text-muted-foreground">
+                  Your completed transaction total is not a wallet balance and does not represent withdrawable funds.
+                </p>
               </div>
               <div className="hidden sm:block">
                 <BarChart3 className="h-12 w-12 text-accent/60" />
@@ -118,6 +138,7 @@ export function MainContent({ onMenuClick }: MainContentProps) {
         </Card>
 
         {/* Stats Grid */}
+        {dashboardError && <p role="alert" className="mb-4 text-sm text-destructive">{dashboardError}</p>}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 mb-8">
           {stats.map((stat) => (
             <Card key={stat.name} className="bg-card border-border">
@@ -126,25 +147,8 @@ export function MainContent({ onMenuClick }: MainContentProps) {
                 <stat.icon className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold text-card-foreground">{stat.value}</div>
-                <p className="text-xs text-muted-foreground flex items-center mt-1">
-                  {stat.changeType === "increase" ? (
-                    <TrendingUp className="h-3 w-3 mr-1 text-green-500" />
-                  ) : stat.changeType === "decrease" ? (
-                    <TrendingDown className="h-3 w-3 mr-1 text-red-500" />
-                  ) : null}
-                  <span
-                    className={
-                      stat.changeType === "increase"
-                        ? "text-green-600"
-                        : stat.changeType === "decrease"
-                          ? "text-red-600"
-                          : "text-muted-foreground"
-                    }
-                  >
-                    {stat.change}
-                  </span>
-                </p>
+                <div className="text-2xl font-bold text-card-foreground">{isDashboardLoading ? "—" : stat.value}</div>
+                <p className="text-xs text-muted-foreground mt-1">{stat.description}</p>
               </CardContent>
             </Card>
           ))}
@@ -181,56 +185,56 @@ export function MainContent({ onMenuClick }: MainContentProps) {
           <Card className="bg-card border-border">
             <CardHeader>
               <CardTitle className="text-card-foreground">Recent Transactions</CardTitle>
-              <CardDescription className="text-muted-foreground">Your latest trading activities</CardDescription>
+              <CardDescription className="text-muted-foreground">Completed requests recorded in your ledger</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="space-y-4">
+              {recentTransactions.length === 0 ? (
+                <p className="py-8 text-center text-sm text-muted-foreground">
+                  {isDashboardLoading ? "Loading transactions..." : "No completed transactions yet."}
+                </p>
+              ) : <div className="space-y-4">
                 {recentTransactions.map((transaction) => (
                   <div key={transaction.id} className="flex items-center justify-between p-3 rounded-lg bg-muted/30">
                     <div className="flex items-center space-x-3">
                       <div
                         className={`p-2 rounded-full ${
-                          transaction.type === "buy"
+                          transaction.side === "buy"
                             ? "bg-green-100 text-green-600"
-                            : transaction.type === "sell"
-                              ? "bg-red-100 text-red-600"
-                              : "bg-blue-100 text-blue-600"
+                            : "bg-red-100 text-red-600"
                         }`}
                       >
-                        {transaction.type === "buy" ? (
+                        {transaction.side === "buy" ? (
                           <ArrowUpRight className="h-4 w-4" />
-                        ) : transaction.type === "sell" ? (
-                          <ArrowDownLeft className="h-4 w-4" />
                         ) : (
-                          <Wallet className="h-4 w-4" />
+                          <ArrowDownLeft className="h-4 w-4" />
                         )}
                       </div>
                       <div>
-                        <p className="text-sm font-medium text-card-foreground">{transaction.description}</p>
-                        <p className="text-xs text-muted-foreground">{transaction.date}</p>
+                        <p className="text-sm font-medium text-card-foreground">{transaction.side.toUpperCase()} {transaction.assetSymbol}</p>
+                        <p className="text-xs text-muted-foreground">{new Date(transaction.createdAt).toLocaleString()}</p>
                       </div>
                     </div>
                     <div className="text-right">
-                      <p className="text-sm font-medium text-card-foreground">{transaction.amount}</p>
-                      <p className="text-xs text-muted-foreground">{transaction.value}</p>
+                      <p className="text-sm font-medium text-card-foreground">{transaction.assetQuantity} {transaction.assetSymbol}</p>
+                      <p className="text-xs text-muted-foreground">${transaction.amountUsd.toFixed(2)} · fee ${transaction.feeUsd.toFixed(2)}</p>
                     </div>
                   </div>
                 ))}
-              </div>
+              </div>}
             </CardContent>
           </Card>
 
           <Card className="bg-card border-border">
             <CardHeader>
               <CardTitle className="text-card-foreground">Portfolio Activity</CardTitle>
-              <CardDescription className="text-muted-foreground">Your trading performance over time</CardDescription>
+              <CardDescription className="text-muted-foreground">Status of your submitted requests</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="h-64 flex items-center justify-center bg-muted/20 rounded-lg">
                 <div className="text-center">
                   <BarChart3 className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                  <p className="text-sm text-muted-foreground">Activity chart will be displayed here</p>
-                  <p className="text-xs text-muted-foreground mt-1">Portfolio up 12.5% this week</p>
+                  <p className="text-sm text-muted-foreground">{orders.length} total request{orders.length === 1 ? "" : "s"}</p>
+                  <p className="text-xs text-muted-foreground mt-1">{waitingOrders} awaiting review or completion</p>
                 </div>
               </div>
             </CardContent>
